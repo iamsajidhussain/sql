@@ -6334,18 +6334,443 @@ Good documentation improves understanding, reduces errors, and makes collaborati
 ## 📊 Analytical SQL
 
 ### 81. How would you find the Nth highest salary from a table?  
+### How would you find the Nth highest salary from a table?
+
+To find the Nth highest salary from a table (e.g., `Employees`), there are several approaches depending on the SQL dialect and version you're using. The most common and reliable way in modern SQL is using **`ROW_NUMBER()`**, **`DENSE_RANK()`**, or **`LIMIT/OFFSET`** (in MySQL/PostgreSQL). Here's a breakdown of each method.
+
+---
+
+### 1. **Using `ROW_NUMBER()` (SQL Server, PostgreSQL, Oracle, etc.)**
+
+```sql
+WITH RankedSalaries AS (
+  SELECT Salary, ROW_NUMBER() OVER (ORDER BY Salary DESC) AS RowNum
+  FROM Employees
+)
+SELECT Salary
+FROM RankedSalaries
+WHERE RowNum = N;
+```
+
+- Replace `N` with the desired rank (e.g., 3 for the 3rd highest).
+- `ROW_NUMBER()` gives a unique rank even if salaries are tied.
+
+---
+
+### 2. **Using `DENSE_RANK()` (handles duplicates properly)**
+
+```sql
+WITH RankedSalaries AS (
+  SELECT Salary, DENSE_RANK() OVER (ORDER BY Salary DESC) AS Rank
+  FROM Employees
+)
+SELECT Salary
+FROM RankedSalaries
+WHERE Rank = N;
+```
+
+- Use `DENSE_RANK()` if you want the **Nth distinct highest salary**, considering tied values as the same rank.
+
+---
+
+### 3. **Using `DISTINCT` with `OFFSET` (MySQL, PostgreSQL)**
+
+```sql
+SELECT DISTINCT Salary
+FROM Employees
+ORDER BY Salary DESC
+LIMIT 1 OFFSET N-1;
+```
+
+- `LIMIT 1 OFFSET N-1` skips the top N-1 salaries and fetches the Nth one.
+- Good for quick lookups, but may not perform well on large datasets.
+
+---
+
+### 4. **Using Subquery with `TOP` / `LIMIT` (SQL Server or MySQL)**
+
+**SQL Server Example:**
+```sql
+SELECT MIN(Salary)
+FROM (
+  SELECT TOP N Salary
+  FROM Employees
+  ORDER BY Salary DESC
+) AS TopSalaries;
+```
+
+**MySQL Example:**
+```sql
+SELECT Salary 
+FROM Employees e1
+WHERE N - 1 = (
+  SELECT COUNT(DISTINCT Salary) 
+  FROM Employees e2 
+  WHERE e2.Salary > e1.Salary
+);
+```
+
+- These methods are useful in systems without window functions.
+
+---
+
+### Answer Summary
+
+- Use **`ROW_NUMBER()`** if you want the exact Nth row (regardless of duplicates).
+- Use **`DENSE_RANK()`** to get the Nth **distinct** highest salary (treating ties as same rank).
+- In MySQL/PostgreSQL, use **`LIMIT` with `OFFSET`** for simplicity.
+- Subqueries work well in older SQL versions without window functions.
+
+Choose the method based on your SQL engine and whether duplicates should be considered.
 <br>
 
 ### 82. How do you count the number of occurrences of a specific value in a column?  
+### How do you count the number of occurrences of a specific value in a column?
+
+To count how many times a specific value appears in a column, you use the `COUNT()` function with a `WHERE` clause that filters for that value.
+
+---
+
+### 1. **Basic Syntax**
+
+```sql
+SELECT COUNT(*) AS OccurrenceCount
+FROM TableName
+WHERE ColumnName = 'SpecificValue';
+```
+
+**Example:**
+```sql
+SELECT COUNT(*) AS MaleCount
+FROM Employees
+WHERE Gender = 'Male';
+```
+
+- This counts how many employees have the gender "Male".
+
+---
+
+### 2. **Using `GROUP BY` to Count Occurrences of All Unique Values**
+
+If you want to see the count of **each** distinct value in a column:
+
+```sql
+SELECT ColumnName, COUNT(*) AS OccurrenceCount
+FROM TableName
+GROUP BY ColumnName;
+```
+
+**Example:**
+```sql
+SELECT Gender, COUNT(*) AS GenderCount
+FROM Employees
+GROUP BY Gender;
+```
+
+- This will return the number of males, females, etc.
+
+---
+
+### 3. **Using `CASE` for Counting Multiple Conditions in One Query**
+
+```sql
+SELECT
+  COUNT(CASE WHEN Gender = 'Male' THEN 1 END) AS MaleCount,
+  COUNT(CASE WHEN Gender = 'Female' THEN 1 END) AS FemaleCount
+FROM Employees;
+```
+
+- This is useful if you want to count multiple specific values in a single query.
+
+---
+
+### 4. **Case-Insensitive Counting (Optional)**
+
+If your database is case-sensitive and you want to count regardless of case:
+
+```sql
+SELECT COUNT(*) 
+FROM TableName
+WHERE LOWER(ColumnName) = 'specificvalue';
+```
+
+---
+
+### Answer Summary
+
+- Use `COUNT(*)` with a `WHERE` clause to count a **specific value**.
+- Use `GROUP BY` to count **all unique values**.
+- Use `CASE WHEN` to count **multiple specific values** in one query.
+These methods help you quickly understand how often a particular value appears in a dataset.
 <br>
 
-### 83. How can you calculate running totals in SQL?  
+### 83. How can you calculate running totals in SQL?
+### How can you calculate running totals in SQL?
+
+A **running total** (also called a cumulative sum) adds up values sequentially as you move through rows in a specific order. It's useful for things like tracking sales over time or accumulating balances.
+
+---
+
+### 1. **Using `SUM()` with `OVER(ORDER BY ...)` (SQL Server, PostgreSQL, Oracle, MySQL 8+)**
+
+```sql
+SELECT 
+  OrderID,
+  OrderDate,
+  CustomerID,
+  Amount,
+  SUM(Amount) OVER (ORDER BY OrderDate) AS RunningTotal
+FROM Orders;
+```
+
+- `SUM(Amount)` calculates the cumulative total.
+- `OVER (ORDER BY OrderDate)` defines the order in which the totals accumulate.
+
+---
+
+### 2. **Partitioned Running Total (Running Total per Group)**
+
+If you want the running total **for each customer**, not across the whole table:
+
+```sql
+SELECT 
+  CustomerID,
+  OrderDate,
+  Amount,
+  SUM(Amount) OVER (PARTITION BY CustomerID ORDER BY OrderDate) AS RunningTotal
+FROM Orders;
+```
+
+- `PARTITION BY` restarts the total for each `CustomerID`.
+
+---
+
+### 3. **Running Total in Older SQL Versions (Using Self Join or Correlated Subquery)**
+
+If your database doesn’t support window functions (like very old MySQL versions):
+
+```sql
+SELECT 
+  o1.OrderID,
+  o1.OrderDate,
+  o1.Amount,
+  (
+    SELECT SUM(o2.Amount)
+    FROM Orders o2
+    WHERE o2.OrderDate <= o1.OrderDate
+  ) AS RunningTotal
+FROM Orders o1;
+```
+
+- Less efficient but works in older systems.
+
+---
+
+### 4. **Ordering by Another Field**
+
+You can change the `ORDER BY` inside the `OVER()` clause to use any field that gives meaningful accumulation (e.g., `OrderID` or `TransactionDate`).
+
+---
+
+### Answer Summary
+
+- Use `SUM() OVER (ORDER BY ...)` for modern SQL — it's efficient and clean.
+- Use `PARTITION BY` to calculate running totals **per group**.
+- Use a **correlated subquery** for older databases without window functions.
+Running totals are great for visualizing progress or tracking cumulative metrics over time.
 <br>
 
-### 84. Explain how to reverse the contents of a column without using a reverse function.  
+### 84. Explain how to reverse the contents of a column without using a reverse function. 
+### Explain how to reverse the contents of a column without using a reverse function
+
+To reverse the characters in a column (e.g., a string) **without using a built-in `REVERSE()` function**, you can simulate the reversal using SQL constructs like recursion, loops, or string functions, depending on the SQL dialect.
+
+Here’s how to do it step-by-step using different approaches.
+
+---
+
+### 1. **Using Recursive CTE (Common Table Expression)** – Works in SQL Server, PostgreSQL
+
+Let’s reverse a string from a column called `TextColumn` in a table called `MyTable`.
+
+```sql
+WITH RecursiveReverse AS (
+  SELECT 
+    ID,
+    CAST(LEFT(TextColumn, 1) AS VARCHAR(MAX)) AS Reversed,
+    SUBSTRING(TextColumn, 2, LEN(TextColumn)) AS Remaining
+  FROM MyTable
+
+  UNION ALL
+
+  SELECT 
+    ID,
+    CAST(LEFT(Remaining, 1) + Reversed AS VARCHAR(MAX)),
+    SUBSTRING(Remaining, 2, LEN(Remaining))
+  FROM RecursiveReverse
+  WHERE LEN(Remaining) > 0
+)
+SELECT ID, MAX(Reversed) AS ReversedText
+FROM RecursiveReverse
+GROUP BY ID;
+```
+
+- This recursive CTE grabs one character at a time from the left and prepends it.
+- It continues until no characters are left.
+- Works for SQL Server and PostgreSQL with some syntax tweaks.
+
+---
+
+### 2. **Using a Numbers/Tally Table (Efficient for Large Datasets)**
+
+If you have a table or CTE of sequential numbers, you can reverse strings like this:
+
+```sql
+WITH Numbers AS (
+  SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N
+  FROM sys.all_objects -- or generate_series(1, max_len) in PostgreSQL
+),
+Reversed AS (
+  SELECT 
+    ID,
+    (
+      SELECT 
+        SUBSTRING(TextColumn, LEN(TextColumn) - N + 1, 1)
+      FROM Numbers
+      WHERE N <= LEN(TextColumn)
+      ORDER BY N
+      FOR XML PATH(''), TYPE
+    ).value('.', 'VARCHAR(MAX)') AS ReversedText
+  FROM MyTable
+)
+SELECT * FROM Reversed;
+```
+
+- This approach breaks each character and reconstructs them in reverse order.
+- Works well when you have a helper number table or CTE.
+
+---
+
+### 3. **Manual Looping via Procedural Code (for MySQL or PL/pgSQL)**
+
+For MySQL (using stored procedures or custom functions):
+
+```sql
+CREATE FUNCTION ReverseString(s VARCHAR(255))
+RETURNS VARCHAR(255)
+DETERMINISTIC
+BEGIN
+  DECLARE rev VARCHAR(255) DEFAULT '';
+  DECLARE i INT DEFAULT CHAR_LENGTH(s);
+  
+  WHILE i > 0 DO
+    SET rev = CONCAT(rev, SUBSTRING(s, i, 1));
+    SET i = i - 1;
+  END WHILE;
+
+  RETURN rev;
+END;
+```
+
+Then use:
+
+```sql
+SELECT ID, ReverseString(TextColumn) AS ReversedText FROM MyTable;
+```
+
+---
+
+### Answer Summary
+
+- Use **recursive CTEs** to reverse strings row-by-row in SQL Server/PostgreSQL.
+- Use a **numbers/tally table** for high-performance character-by-character reversal.
+- Use **custom functions or loops** in MySQL or PL/SQL-based databases.
+This method avoids the built-in `REVERSE()` but achieves the same result creatively using SQL logic.
 <br>
 
 ### 85. What approach do you use for creating a calendar table, and what are its uses?  
+### What approach do you use for creating a calendar table, and what are its uses?
+
+A **calendar table** is a permanent table that stores one row for each date within a range (e.g., 10 years). It includes columns like year, month, day of week, quarter, holidays, weekdays, etc. This table becomes very useful for time-based reporting, handling gaps in data, and simplifying date-related calculations.
+
+---
+
+### How to Create a Calendar Table
+
+#### 1. **Using Recursive CTE (for SQL Server, PostgreSQL)**
+
+```sql
+WITH DateSequence AS (
+  SELECT CAST('2020-01-01' AS DATE) AS CalendarDate
+  UNION ALL
+  SELECT DATEADD(DAY, 1, CalendarDate)
+  FROM DateSequence
+  WHERE CalendarDate < '2030-12-31'
+)
+SELECT 
+  CalendarDate,
+  DATENAME(WEEKDAY, CalendarDate) AS DayName,
+  DATEPART(DAY, CalendarDate) AS Day,
+  DATEPART(MONTH, CalendarDate) AS Month,
+  DATENAME(MONTH, CalendarDate) AS MonthName,
+  DATEPART(YEAR, CalendarDate) AS Year,
+  DATEPART(QUARTER, CalendarDate) AS Quarter,
+  CASE 
+    WHEN DATENAME(WEEKDAY, CalendarDate) IN ('Saturday', 'Sunday') THEN 0 
+    ELSE 1 
+  END AS IsWeekday
+INTO CalendarTable
+FROM DateSequence
+OPTION (MAXRECURSION 0);
+```
+
+- **`CalendarDate`** is the actual date.
+- Columns like **DayName**, **MonthName**, **Quarter**, and **IsWeekday** are derived for richer reporting.
+- `OPTION (MAXRECURSION 0)` allows generating more than 100 rows.
+
+#### 2. **Using a Tally Table (if you already have one)**
+
+```sql
+SELECT 
+  DATEADD(DAY, n, '2020-01-01') AS CalendarDate
+INTO CalendarTable
+FROM (SELECT TOP 3650 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
+      FROM master.dbo.spt_values) AS Numbers;
+```
+
+- This generates 3650 days (10 years).
+- Modify `TOP` value as needed for your date range.
+
+---
+
+### Useful Columns to Include
+
+- `CalendarDate`
+- `Day`, `Month`, `Year`
+- `WeekdayName`, `WeekdayNumber`
+- `IsWeekend`, `IsWeekday`
+- `Quarter`
+- `IsHoliday` (if you manage a separate holiday table)
+- `FiscalYear`, `FiscalMonth` (if needed)
+
+---
+
+### Uses of a Calendar Table
+
+- **Time-based reporting**: Ensures every day/month is present in reports, even if there's no data for it.
+- **Handling gaps**: Easily join with your sales or transactions data to spot missing dates.
+- **Performance**: Faster queries when filtering or grouping by date attributes.
+- **Custom calendars**: Create fiscal calendars, academic calendars, or 4-4-5 retail calendars.
+- **Simplified SQL**: Replaces complex date logic with simple joins.
+
+---
+
+### Answer Summary
+
+- A calendar table is a helper table containing dates and their attributes.
+- You can generate it using a **recursive CTE** or a **tally table**.
+- It simplifies reporting, helps identify data gaps, supports custom calendars, and boosts query performance.
+Having a well-structured calendar table is a best practice in any SQL-based data warehouse or reporting system.
 <br>
 
 ---
@@ -6353,37 +6778,948 @@ Good documentation improves understanding, reduces errors, and makes collaborati
 ## 🔄 Data Manipulation and ETL
 
 ### 86. What is the process of Extract, Transform, Load (ETL)?  
+### What is the process of Extract, Transform, Load (ETL)?
+
+ETL stands for **Extract, Transform, Load** — it's a standard process in data integration where data is taken from various sources, transformed into the desired format, and loaded into a target system like a data warehouse.
+
+---
+
+### Step-by-Step Process of ETL
+
+#### 1. **Extract**
+- **Purpose**: Pull data from multiple and often heterogeneous data sources.
+- **Sources**: Databases (SQL, NoSQL), flat files (CSV, JSON), APIs, cloud storage, CRM, ERP systems.
+- **Goal**: Extract raw data **without modifying** it, ensuring minimal impact on the source system.
+  
+#### 2. **Transform**
+- **Purpose**: Clean, reformat, and enrich the data to make it usable and consistent.
+- **Common Transformations**:
+  - Data type conversion
+  - Removing duplicates or nulls
+  - Standardizing formats (e.g., dates, currencies)
+  - Aggregating or summarizing
+  - Applying business rules
+  - Merging/joining datasets
+- This step ensures data quality, consistency, and integrity before loading.
+
+#### 3. **Load**
+- **Purpose**: Move the transformed data into the final destination — typically a **data warehouse**, **data mart**, or **analytical database**.
+- **Load Strategies**:
+  - **Full Load**: All data is loaded every time (used for small datasets).
+  - **Incremental Load**: Only new or changed data is loaded (efficient for large datasets).
+
+---
+
+### Real-World Example
+
+Let’s say a company collects sales data from:
+- A MySQL database (online store)
+- CSV reports (offline stores)
+- A third-party API (distributors)
+
+The ETL process:
+1. **Extract** data from all three sources.
+2. **Transform** it to unify date formats, product IDs, and currency values.
+3. **Load** the cleaned and formatted data into a central SQL Server data warehouse for business reporting.
+
+---
+
+### Answer Summary
+
+- **ETL (Extract, Transform, Load)** is a key process in data integration and warehousing.
+- **Extract**: Get data from multiple sources.
+- **Transform**: Clean and prepare the data.
+- **Load**: Move data to a final destination like a data warehouse.
+ETL helps organizations make accurate, consistent, and timely data available for analysis and decision-making.
 <br>
 
 ### 87. How do you import/export data from/to a flat file using SQL?  
+### How do you import/export data from/to a flat file using SQL?
+
+Flat files (like `.csv`, `.txt`) are commonly used for importing or exporting data between systems. SQL provides several tools and commands to handle flat file operations efficiently.
+
+---
+
+### **Importing Data from a Flat File**
+
+#### 1. **Using `BULK INSERT` (SQL Server)**
+
+```sql
+BULK INSERT Employees
+FROM 'C:\Data\employees.csv'
+WITH (
+    FIELDTERMINATOR = ',',
+    ROWTERMINATOR = '\n',
+    FIRSTROW = 2
+);
+```
+
+- **`Employees`** is the target table.
+- **`FIELDTERMINATOR`** defines the column separator.
+- **`FIRSTROW = 2`** skips the header row.
+
+#### 2. **Using `OPENROWSET`**
+
+```sql
+SELECT *
+INTO TempEmployees
+FROM OPENROWSET(
+    BULK 'C:\Data\employees.csv',
+    FORMAT = 'CSV',
+    FIRSTROW = 2
+) AS DataFile;
+```
+
+- Loads data directly into a new table or queries it on the fly.
+
+#### 3. **Using SQL Server Management Studio (SSMS) Wizard**
+- Right-click on the database → **Tasks** → **Import Data**.
+- Choose "Flat File Source" and follow the wizard to map fields.
+
+---
+
+### **Exporting Data to a Flat File**
+
+#### 1. **Using `bcp` Utility (Command-Line Tool)**
+
+```bash
+bcp "SELECT * FROM Employees" queryout "C:\Data\exported_employees.csv" -c -t, -T -S servername
+```
+
+- **`-c`**: Character mode
+- **`-t,`**: Comma as delimiter
+- **`-T`**: Trusted connection
+
+#### 2. **Using `SQLCMD` Utility**
+
+```bash
+sqlcmd -S servername -d MyDatabase -E -Q "SELECT * FROM Employees" -o "C:\Data\employees.txt" -s"," -W
+```
+
+- **`-o`**: Output file path
+- **`-s","`**: Sets the column separator to comma
+
+#### 3. **Using SSMS Export Wizard**
+- Right-click on the database → **Tasks** → **Export Data**.
+- Choose a destination format like Flat File Destination.
+
+---
+
+### Answer Summary
+
+- **Import**: Use `BULK INSERT`, `OPENROWSET`, or SSMS Import Wizard.
+- **Export**: Use `bcp`, `SQLCMD`, or SSMS Export Wizard.
+- Specify delimiters like commas or tabs, and handle headers properly.
+SQL provides powerful tools to move data to/from flat files easily, making it great for data migration and integration tasks.
 <br>
 
 ### 88. Explain the steps for a basic ETL process in a data warehousing environment.  
+### Explain the steps for a basic ETL process in a data warehousing environment.
+
+ETL (Extract, Transform, Load) is a fundamental process used to move data from multiple sources into a centralized data warehouse. This process ensures that data is cleansed, formatted, and organized to support business intelligence and analytics.
+
+---
+
+### Step-by-Step ETL Process
+
+#### 1. **Extract**
+- **Goal**: Collect raw data from various source systems.
+- **Sources**:
+  - Relational databases (e.g., SQL Server, Oracle)
+  - Flat files (e.g., CSV, Excel)
+  - APIs or cloud services (e.g., Salesforce, AWS S3)
+- **Tools**: SQL queries, ETL tools (e.g., SSIS, Talend), connectors
+- **Challenges**:
+  - Data heterogeneity (different formats or structures)
+  - Maintaining source system performance
+
+#### 2. **Transform**
+- **Goal**: Convert the raw data into a clean, consistent format that matches the data warehouse schema.
+- **Common Transformations**:
+  - Data cleaning: removing duplicates, nulls, or corrupt records
+  - Data standardization: unifying date formats, currency, text case
+  - Calculated fields: creating metrics like totals, percentages
+  - Lookups and joins: enriching data using reference tables
+  - Data validation: applying business rules
+- **Tools**: ETL engines, scripting (SQL, Python), data quality tools
+
+#### 3. **Load**
+- **Goal**: Insert the transformed data into the target data warehouse.
+- **Methods**:
+  - **Full Load**: Overwrite the entire data (used in first-time loads or small datasets)
+  - **Incremental Load**: Only new or changed data is added (used for daily/hourly updates)
+- **Destination**:
+  - Central data warehouse (e.g., Snowflake, Amazon Redshift, SQL Server)
+- **Considerations**:
+  - Indexing for performance
+  - Ensuring referential integrity
+  - Logging and error handling during the load
+
+---
+
+### Answer Summary
+
+- **Extract**: Pull raw data from various systems.
+- **Transform**: Clean, format, and enrich the data.
+- **Load**: Insert the final data into the data warehouse.
+Each step is crucial for ensuring high-quality, reliable, and analytics-ready data in a data warehousing environment.
 <br>
 
 ### 89. How do you cleanse and format data using SQL queries?  
+Data cleansing and formatting in SQL involves identifying and fixing errors or inconsistencies in the data to ensure accuracy and consistency. SQL provides a rich set of functions to clean and standardize data before it's used for reporting or analysis.
+
+---
+
+### Common Data Cleansing Techniques in SQL
+
+#### 1. **Remove Leading/Trailing Spaces**
+```sql
+SELECT LTRIM(RTRIM(column_name)) AS CleanedColumn
+FROM YourTable;
+```
+
+#### 2. **Convert NULLs to Default Values**
+```sql
+SELECT ISNULL(column_name, 'N/A') AS CleanedColumn
+FROM YourTable;
+```
+
+#### 3. **Remove Duplicates**
+```sql
+SELECT DISTINCT *
+FROM YourTable;
+```
+
+Or use `ROW_NUMBER()` to keep the latest record:
+```sql
+WITH CTE AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY Email ORDER BY UpdatedDate DESC) AS rn
+  FROM Users
+)
+DELETE FROM CTE WHERE rn > 1;
+```
+
+#### 4. **Standardize Case (e.g., upper/lower case)**
+```sql
+SELECT UPPER(column_name) AS UpperCaseCol,
+       LOWER(column_name) AS LowerCaseCol
+FROM YourTable;
+```
+
+#### 5. **Fix Invalid Date Formats**
+```sql
+SELECT TRY_CONVERT(DATE, column_name, 103) AS CleanedDate
+FROM YourTable;
+```
+
+#### 6. **Validate Email Format (basic)**
+```sql
+SELECT *
+FROM Users
+WHERE Email LIKE '_%@_%._%';
+```
+
+#### 7. **Replace or Remove Unwanted Characters**
+```sql
+SELECT REPLACE(column_name, '-', '') AS CleanedColumn
+FROM YourTable;
+```
+
+To remove multiple unwanted characters, use nested `REPLACE()` or `TRANSLATE()` (if supported).
+
+#### 8. **Format Numbers or Dates**
+```sql
+SELECT FORMAT(Salary, 'C') AS FormattedSalary,
+       FORMAT(HireDate, 'yyyy-MM-dd') AS FormattedDate
+FROM Employees;
+```
+
+---
+
+### Answer Summary
+
+- Use functions like `LTRIM`, `RTRIM`, `ISNULL`, `REPLACE`, `UPPER`, `LOWER`, and `FORMAT` to clean and format data.
+- Handle duplicates using `DISTINCT` or `ROW_NUMBER()`.
+- Convert data types and validate formats using `TRY_CONVERT` or pattern matching.
+Cleansing and formatting ensure data is accurate, consistent, and ready for analysis or loading into a data warehouse.
 <br>
 
 ### 90. What tools do you use for automating data import/export routines?  
+### What tools do you use for automating data import/export routines?
+
+Automating data import/export routines ensures data flows consistently and reliably between systems without manual intervention. Several tools and utilities can help automate these processes depending on the environment and data sources.
+
+---
+
+### Common Tools for Automating Import/Export
+
+#### 1. **SQL Server Integration Services (SSIS)**
+- **Use**: Drag-and-drop ETL tool in Microsoft SQL Server.
+- **Automates**: Data flow from flat files, Excel, databases, APIs, etc.
+- **Features**:
+  - Scheduled packages using SQL Server Agent
+  - Built-in transformations and error handling
+  - Logging and checkpoint support
+
+#### 2. **SQL Server Agent**
+- **Use**: Schedules and executes SQL jobs.
+- **Automates**:
+  - `BULK INSERT` or `bcp` for import/export
+  - SSIS package execution
+  - Stored procedures for data manipulation
+
+#### 3. **`bcp` (Bulk Copy Program)**
+- **Use**: Command-line tool to export/import data to/from files.
+- **Example**:
+  ```bash
+  bcp YourDB.dbo.Table out data.csv -c -t, -T -S server
+  ```
+
+#### 4. **PowerShell Scripts**
+- **Use**: Automate `bcp`, `sqlcmd`, or REST API-based file transfers.
+- **Example Tasks**:
+  - Schedule `.ps1` scripts via Task Scheduler
+  - Combine data movement with validation or email notifications
+
+#### 5. **Azure Data Factory / AWS Glue / Google Dataflow**
+- **Use**: Cloud-based ETL automation tools.
+- **Supports**:
+  - Integration between on-prem and cloud storage
+  - Scheduling, monitoring, and scaling pipelines
+  - Connectivity to SQL, NoSQL, Blob storage, and APIs
+
+#### 6. **Python (with Pandas/SQLAlchemy)**
+- **Use**: Automates ETL with custom logic.
+- **Example**:
+  - Read CSV → Clean with Pandas → Load into SQL DB
+  - Schedule with `cron` or Task Scheduler
+
+#### 7. **DBMS-Specific Export/Import Tools**
+- **MySQL**: `mysqldump`, `LOAD DATA INFILE`
+- **PostgreSQL**: `pg_dump`, `COPY TO/FROM`
+- **Oracle**: `Data Pump`, `SQL*Loader`
+
+---
+
+### Answer Summary
+
+- Use **SSIS**, **SQL Server Agent**, or **bcp** for SQL Server environments.
+- Leverage **cloud ETL tools** like Azure Data Factory or AWS Glue for large-scale or cross-platform data flows.
+- Automate scripts using **PowerShell**, **Python**, or **SQL jobs**.
+- Choose tools based on data source type, transformation complexity, and environment (on-prem or cloud).
 <br>
 
 ---
 
 ## 🧱 Domain-Specific SQL Scenarios
 
-### 91. How would you model a many-to-many relationship in SQL?  
+### 91. How would you model a many-to-many relationship in SQL? 
+A many-to-many relationship occurs when multiple records in one table are associated with multiple records in another. Since relational databases don’t support direct many-to-many relationships, we model them using a **junction (bridge) table** that contains foreign keys referencing the primary keys of the two related tables.
+
+---
+
+### Example Scenario: Students and Courses
+
+- A student can enroll in many courses.
+- A course can have many students.
+
+---
+
+### Step-by-Step Modeling
+
+#### 1. **Main Tables**
+```sql
+CREATE TABLE Students (
+    StudentID INT PRIMARY KEY,
+    StudentName VARCHAR(100)
+);
+
+CREATE TABLE Courses (
+    CourseID INT PRIMARY KEY,
+    CourseName VARCHAR(100)
+);
+```
+
+#### 2. **Junction Table**
+```sql
+CREATE TABLE StudentCourses (
+    StudentID INT,
+    CourseID INT,
+    EnrollmentDate DATE,
+    PRIMARY KEY (StudentID, CourseID),
+    FOREIGN KEY (StudentID) REFERENCES Students(StudentID),
+    FOREIGN KEY (CourseID) REFERENCES Courses(CourseID)
+);
+```
+
+- The `StudentCourses` table establishes the many-to-many relationship.
+- Composite primary key `(StudentID, CourseID)` ensures uniqueness (a student can’t enroll in the same course twice).
+- You can add more columns like `Grade`, `EnrollmentDate`, etc.
+
+---
+
+### Query Example: List all students with their enrolled courses
+```sql
+SELECT s.StudentName, c.CourseName
+FROM Students s
+JOIN StudentCourses sc ON s.StudentID = sc.StudentID
+JOIN Courses c ON sc.CourseID = c.CourseID;
+```
+
+---
+
+### Answer Summary
+
+- Many-to-many relationships are modeled using a **junction table** with foreign keys to the two related tables.
+- The junction table often uses a **composite primary key** to enforce uniqueness.
+- This structure allows flexible expansion and querying while maintaining referential integrity.
 <br>
 
 ### 92. Describe how to manage hierarchical data in SQL.  
+### Describe how to manage hierarchical data in SQL.
+
+Hierarchical data refers to data that is organized in a tree-like structure where records are related in parent-child relationships—like categories and subcategories, employees and managers, or folders and subfolders.
+
+SQL databases are relational by nature and not hierarchical, but we can manage hierarchical data using a few key approaches.
+
+---
+
+### Common Approaches to Managing Hierarchical Data
+
+#### 1. **Adjacency List Model (Self-Referencing Table)**
+Each record stores a reference (foreign key) to its parent.
+
+```sql
+CREATE TABLE Employees (
+    EmployeeID INT PRIMARY KEY,
+    Name VARCHAR(100),
+    ManagerID INT NULL,  -- Self-reference
+    FOREIGN KEY (ManagerID) REFERENCES Employees(EmployeeID)
+);
+```
+
+To get the hierarchy:
+
+```sql
+SELECT e1.Name AS Employee, e2.Name AS Manager
+FROM Employees e1
+LEFT JOIN Employees e2 ON e1.ManagerID = e2.EmployeeID;
+```
+
+To get the full tree recursively (in SQL Server / PostgreSQL):
+
+```sql
+WITH EmployeeHierarchy AS (
+    SELECT EmployeeID, Name, ManagerID, 0 AS Level
+    FROM Employees
+    WHERE ManagerID IS NULL  -- Root level
+
+    UNION ALL
+
+    SELECT e.EmployeeID, e.Name, e.ManagerID, eh.Level + 1
+    FROM Employees e
+    INNER JOIN EmployeeHierarchy eh ON e.ManagerID = eh.EmployeeID
+)
+SELECT * FROM EmployeeHierarchy;
+```
+
+#### 2. **Path Enumeration Model**
+Stores the full path of each node as a string.
+
+```sql
+-- Example column value: '/CEO/CTO/DevTeamLead/'
+```
+
+Easy to query descendants or ancestors using `LIKE`:
+
+```sql
+SELECT * FROM OrgChart WHERE Path LIKE '/CEO/CTO/%';
+```
+
+But updates can be tricky if a node's path changes.
+
+#### 3. **Nested Set Model**
+Each node stores `left` and `right` values to define its position in the tree.
+
+```sql
+CREATE TABLE Categories (
+    CategoryID INT PRIMARY KEY,
+    Name VARCHAR(100),
+    LFT INT,
+    RGT INT
+);
+```
+
+To find all descendants of a node:
+
+```sql
+SELECT * FROM Categories
+WHERE LFT > (SELECT LFT FROM Categories WHERE Name = 'Electronics')
+  AND RGT < (SELECT RGT FROM Categories WHERE Name = 'Electronics');
+```
+
+Efficient for reads but harder to maintain for inserts/updates.
+
+#### 4. **Closure Table**
+Uses a separate table to store all ancestor-descendant pairs.
+
+```sql
+CREATE TABLE CategoryClosure (
+    AncestorID INT,
+    DescendantID INT,
+    Depth INT,
+    PRIMARY KEY (AncestorID, DescendantID)
+);
+```
+
+Good for complex queries like "all ancestors" or "all descendants."
+
+---
+
+### Answer Summary
+
+- **Adjacency List**: Simple and easy to implement using self-joins or recursive CTEs.
+- **Path Enumeration**: Stores the path as a string; easy to query but hard to update.
+- **Nested Set**: Fast reads, complex writes; uses `left` and `right` boundaries.
+- **Closure Table**: Best for advanced hierarchical queries; maintains ancestor-descendant pairs.
+
+Choose the model based on read/write performance needs, ease of updates, and query complexity.
 <br>
 
 ### 93. How would you approach writing SQL queries for a reporting application?  
+### How would you approach writing SQL queries for a reporting application?
+
+When writing SQL queries for a reporting application, the goal is to retrieve data efficiently, ensure accuracy, and deliver insights in a format that can be easily consumed by users or other systems. Here's how I would approach it:
+
+---
+
+### 1. **Understand the Reporting Requirements**
+   - **Clarify the business logic**: Know what metrics, dimensions, and filters are needed. Are you calculating totals, averages, or percentages? Do you need grouping or time-based comparisons?
+   - **Know the data sources**: Identify the tables, views, or external data sources that will be queried.
+   - **Identify performance constraints**: How large is the dataset? Do you need real-time data or can it be scheduled?
+
+---
+
+### 2. **Design the Query Structure**
+
+#### a. **Select Relevant Data**
+   - **Columns**: Select only the necessary columns that provide the needed information for the report.
+   - **Filtering**: Apply filters (e.g., `WHERE` clauses) to retrieve only the relevant data for the report.
+   
+   Example:
+   ```sql
+   SELECT SalesAmount, SalesDate
+   FROM Sales
+   WHERE SalesDate BETWEEN '2024-01-01' AND '2024-12-31';
+   ```
+
+#### b. **Aggregate Data**
+   - Use `GROUP BY` to summarize data by relevant categories.
+   - Use aggregate functions (`SUM`, `COUNT`, `AVG`, etc.) for metrics.
+   
+   Example:
+   ```sql
+   SELECT Region, SUM(SalesAmount) AS TotalSales
+   FROM Sales
+   GROUP BY Region;
+   ```
+
+#### c. **Calculate Complex Metrics**
+   - For more complex calculations (e.g., percentages, growth), use derived columns.
+   
+   Example (calculate growth percentage):
+   ```sql
+   SELECT Region,
+          SUM(CASE WHEN YEAR(SalesDate) = 2023 THEN SalesAmount ELSE 0 END) AS Sales2023,
+          SUM(CASE WHEN YEAR(SalesDate) = 2024 THEN SalesAmount ELSE 0 END) AS Sales2024,
+          (SUM(CASE WHEN YEAR(SalesDate) = 2024 THEN SalesAmount ELSE 0 END) - 
+           SUM(CASE WHEN YEAR(SalesDate) = 2023 THEN SalesAmount ELSE 0 END)) / 
+           SUM(CASE WHEN YEAR(SalesDate) = 2023 THEN SalesAmount ELSE 0 END) * 100 AS GrowthPercentage
+   FROM Sales
+   GROUP BY Region;
+   ```
+
+#### d. **Joins**
+   - If your report requires data from multiple tables, use appropriate `JOIN` clauses.
+   - Use `INNER JOIN` for matching records, `LEFT JOIN` for all records from the left table and matching from the right table, etc.
+
+   Example:
+   ```sql
+   SELECT s.SalesAmount, c.CustomerName
+   FROM Sales s
+   JOIN Customers c ON s.CustomerID = c.CustomerID;
+   ```
+
+---
+
+### 3. **Optimize Query Performance**
+   - **Indexes**: Ensure columns used in `WHERE`, `JOIN`, and `ORDER BY` clauses are indexed.
+   - **Avoid SELECT ***: Always select the specific columns needed to avoid unnecessary data retrieval.
+   - **Limit Rows**: Use `LIMIT` or `TOP` clauses when testing or if only a subset of data is required.
+
+   Example:
+   ```sql
+   SELECT Region, SUM(SalesAmount) AS TotalSales
+   FROM Sales
+   WHERE SalesDate BETWEEN '2024-01-01' AND '2024-12-31'
+   GROUP BY Region
+   ORDER BY TotalSales DESC
+   LIMIT 10;
+   ```
+
+---
+
+### 4. **Handle Data Formatting and Presentation**
+
+   - **Formatting**: Use `FORMAT()` or `CAST()` to convert numbers, dates, and other data into the required format for reports.
+   
+   Example (formatting a number as currency):
+   ```sql
+   SELECT FORMAT(SUM(SalesAmount), 'C', 'en-US') AS TotalSales
+   FROM Sales;
+   ```
+
+   - **Date Grouping**: For time-based reports, aggregate by date, month, or year using functions like `YEAR()`, `MONTH()`, `DAY()`.
+   
+   Example (monthly report):
+   ```sql
+   SELECT YEAR(SalesDate) AS Year, MONTH(SalesDate) AS Month, SUM(SalesAmount) AS MonthlySales
+   FROM Sales
+   GROUP BY YEAR(SalesDate), MONTH(SalesDate);
+   ```
+
+---
+
+### 5. **Ensure Scalability and Maintainability**
+
+   - **Modular Queries**: Break down large complex reports into smaller, reusable queries or views.
+   - **Parameterized Queries**: Allow flexibility with input parameters for filtering and customization (e.g., using `WHERE @StartDate` and `WHERE @EndDate`).
+
+   Example (using parameters in a reporting tool or stored procedure):
+   ```sql
+   CREATE PROCEDURE GetSalesReport(@StartDate DATE, @EndDate DATE)
+   AS
+   BEGIN
+       SELECT Region, SUM(SalesAmount) AS TotalSales
+       FROM Sales
+       WHERE SalesDate BETWEEN @StartDate AND @EndDate
+       GROUP BY Region;
+   END;
+   ```
+
+---
+
+### 6. **Test and Validate**
+   - **Cross-check Data**: Ensure the data returned by the query matches expected results.
+   - **Performance Testing**: Check how the query performs with large datasets to ensure it’s scalable and runs within the acceptable time limits.
+
+---
+
+### Answer Summary
+
+- **Understand requirements**: Know the metrics, filters, and data sources before writing queries.
+- **Design the query**: Focus on selecting necessary data, applying aggregations, and joining relevant tables.
+- **Optimize for performance**: Use indexes, avoid SELECT *, limit rows, and ensure efficiency.
+- **Format the data**: Format numbers, dates, and metrics for easy consumption.
+- **Scalability**: Use reusable views, stored procedures, and parameterized queries for flexibility and maintenance.
+- **Test thoroughly**: Validate both correctness and performance of the query.
+
+By following these steps, you ensure that SQL queries for a reporting application are efficient, accurate, and maintainable.
 <br>
 
 ### 94. Explain how to handle temporal data and time zones in SQL.  
+### Explain how to handle temporal data and time zones in SQL.
+
+Handling temporal data, such as dates and times, is a common requirement in databases. It’s crucial to store and manipulate this data correctly, especially when dealing with different time zones. SQL provides several tools to manage and manipulate temporal data effectively.
+
+---
+
+### 1. **Temporal Data Types in SQL**
+
+SQL provides various data types to store date and time information. These include:
+
+- **DATE**: Stores the date (year, month, day).
+- **TIME**: Stores the time (hours, minutes, seconds).
+- **DATETIME / TIMESTAMP**: Stores both date and time (year, month, day, hours, minutes, seconds).
+- **SMALLDATETIME**: Similar to DATETIME but with less precision.
+- **TIMESTAMP (in some DBMS)**: Stores a unique number that is auto-generated by the database to indicate the change of a row. It should not be confused with the `TIMESTAMP` data type that stores date and time.
+- **DATE/TIME with time zone**: Some systems support these data types (e.g., PostgreSQL with `TIMESTAMPTZ`) that include information about the time zone.
+
+---
+
+### 2. **Storing Time Zone Information**
+
+SQL by itself doesn’t inherently store time zone information with date and time unless explicitly specified. However, there are several strategies to handle time zones:
+
+#### a. **Store Dates in UTC**
+   - The best practice is to store all temporal data in UTC (Coordinated Universal Time) to avoid discrepancies between time zones. This ensures consistency across different locations.
+   - When storing in UTC, you can convert it back to the local time zone when displaying or processing the data.
+
+   Example (storing in UTC):
+   ```sql
+   INSERT INTO Events (EventName, EventTime)
+   VALUES ('Conference', GETUTCDATE());
+   ```
+
+   - When retrieving, convert it to the desired time zone.
+   
+   Example (converting UTC to local time in SQL Server):
+   ```sql
+   SELECT EventName, 
+          DATEADD(HOUR, DATEDIFF(HOUR, GETDATE(), GETUTCDATE()), EventTime) AS LocalEventTime
+   FROM Events;
+   ```
+
+#### b. **Store with Time Zone Offset**
+   - Another option is to store both the date/time and the time zone offset (e.g., `+02:00` or `-05:00`).
+   - This allows storing local time along with the information on the time zone it belongs to.
+
+   Example (storing with offset):
+   ```sql
+   CREATE TABLE UserLogs (
+       LogID INT PRIMARY KEY,
+       UserID INT,
+       LogTime DATETIMEOFFSET
+   );
+   ```
+
+---
+
+### 3. **Converting Between Time Zones**
+
+SQL databases like PostgreSQL, SQL Server, and MySQL provide functions to convert between time zones. Below are examples of how to handle time zone conversions:
+
+#### a. **In SQL Server**
+
+SQL Server provides `SYSDATETIMEOFFSET()` to get the current system time with the time zone offset. To convert between time zones, use `AT TIME ZONE`.
+
+Example (convert UTC to local time):
+```sql
+SELECT EventName, EventTime AT TIME ZONE 'UTC' AT TIME ZONE 'Pacific Standard Time' AS LocalEventTime
+FROM Events;
+```
+
+#### b. **In PostgreSQL**
+
+PostgreSQL provides `TIMESTAMPTZ` (timestamp with time zone) for storing time zone-aware data. To convert time between time zones, use `AT TIME ZONE`.
+
+Example (convert UTC to local time):
+```sql
+SELECT EventName, EventTime AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles' AS LocalEventTime
+FROM Events;
+```
+
+#### c. **In MySQL**
+
+MySQL supports time zone conversion using the `CONVERT_TZ()` function.
+
+Example (convert UTC to local time):
+```sql
+SELECT EventName, CONVERT_TZ(EventTime, '+00:00', '-08:00') AS LocalEventTime
+FROM Events;
+```
+
+---
+
+### 4. **Handling Daylight Saving Time (DST)**
+
+When converting between time zones, it’s crucial to account for Daylight Saving Time (DST), which changes the local time depending on the time of year. Most modern database systems, like PostgreSQL and SQL Server, automatically handle DST adjustments if the correct time zone is specified.
+
+Example (automatically handle DST in SQL Server):
+```sql
+SELECT EventName, EventTime AT TIME ZONE 'UTC' AT TIME ZONE 'Eastern Standard Time' AS LocalEventTime
+FROM Events;
+```
+This will adjust automatically based on whether DST is in effect.
+
+---
+
+### 5. **Best Practices for Temporal Data and Time Zones**
+
+- **Always store dates in UTC**: This ensures consistency across time zones and prevents confusion about when an event or transaction occurred.
+- **Store time zone information when necessary**: If you must store data in the local time zone, keep track of the offset or time zone along with the timestamp.
+- **Use appropriate data types**: Use `DATETIMEOFFSET` or `TIMESTAMPTZ` where supported for time zone-aware timestamps.
+- **Convert to local time when needed**: When displaying or reporting data, convert from UTC to the appropriate local time zone.
+- **Consider DST**: Make sure your time zone conversions handle Daylight Saving Time transitions properly.
+
+---
+
+### Answer Summary
+
+- **Temporal Data Types**: Use `DATE`, `TIME`, `DATETIME`, `DATETIMEOFFSET`, or `TIMESTAMPTZ` depending on the requirement.
+- **Store in UTC**: A best practice is to store data in UTC to avoid time zone discrepancies.
+- **Time Zone Conversion**: Use functions like `AT TIME ZONE` (SQL Server, PostgreSQL) or `CONVERT_TZ()` (MySQL) to convert between time zones.
+- **DST Handling**: Rely on database systems’ built-in capabilities for handling Daylight Saving Time adjustments.
+
+By understanding and applying these strategies, you can ensure accurate, consistent, and reliable handling of temporal data across different time zones.
 <br>
 
 ### 95. How do you use SQL in financial applications for risk and portfolio analysis?  
+### How do you use SQL in financial applications for risk and portfolio analysis?
+
+SQL plays a pivotal role in financial applications, especially in areas like risk management and portfolio analysis. Financial data is typically stored in relational databases, and SQL helps analysts and developers retrieve, analyze, and manipulate this data to make informed decisions. In financial applications, SQL can be used to calculate risk metrics, assess portfolio performance, and model various financial scenarios.
+
+---
+
+### 1. **Risk Metrics Calculation**
+
+SQL is widely used to calculate risk metrics like **Value at Risk (VaR)**, **Standard Deviation**, **Beta**, and **Sharpe Ratio**, which help assess the risk exposure of a financial portfolio.
+
+#### a. **Value at Risk (VaR)**
+   - **VaR** is a statistical measure used to assess the potential loss in the value of a portfolio over a defined period, under normal market conditions. SQL can be used to calculate VaR by analyzing historical returns and applying statistical methods.
+   
+   Example: Calculate the 95% VaR for a portfolio.
+   ```sql
+   SELECT PortfolioID, 
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY DailyReturn DESC) AS VaR_95
+   FROM PortfolioReturns
+   GROUP BY PortfolioID;
+   ```
+
+#### b. **Standard Deviation (Volatility)**
+   - Standard deviation is used to measure the volatility or risk of an asset or portfolio. SQL can be used to calculate the standard deviation of returns for each asset in a portfolio.
+
+   Example:
+   ```sql
+   SELECT AssetID, 
+          STDDEV(DailyReturn) AS Volatility
+   FROM AssetReturns
+   GROUP BY AssetID;
+   ```
+
+#### c. **Beta**
+   - **Beta** measures the sensitivity of an asset’s return relative to the overall market return. SQL can be used to calculate Beta by comparing the returns of the asset and the market.
+   
+   Example: Calculate Beta for an asset based on historical data.
+   ```sql
+   SELECT AssetID, 
+          (SUM(AssetReturn * MarketReturn) / SUM(MarketReturn * MarketReturn)) AS Beta
+   FROM AssetReturns
+   JOIN MarketReturns ON AssetReturns.Date = MarketReturns.Date
+   GROUP BY AssetID;
+   ```
+
+---
+
+### 2. **Portfolio Performance Evaluation**
+
+SQL is essential for calculating various portfolio performance metrics, such as the **Sharpe Ratio**, **Alpha**, and **Portfolio Return**. These metrics provide insights into the risk-adjusted returns and the overall performance of the portfolio.
+
+#### a. **Sharpe Ratio**
+   - The **Sharpe Ratio** is used to evaluate the risk-adjusted return of a portfolio. It is calculated by dividing the portfolio’s excess return (over a risk-free rate) by its standard deviation (volatility).
+   
+   Example:
+   ```sql
+   SELECT PortfolioID, 
+          AVG(PortfolioReturn) AS AvgReturn, 
+          STDDEV(PortfolioReturn) AS Volatility,
+          (AVG(PortfolioReturn) - RiskFreeRate) / STDDEV(PortfolioReturn) AS SharpeRatio
+   FROM PortfolioReturns
+   GROUP BY PortfolioID;
+   ```
+
+#### b. **Portfolio Return**
+   - SQL can be used to calculate the total return of a portfolio by summing the returns of its constituent assets, weighted by their respective allocations.
+
+   Example:
+   ```sql
+   SELECT PortfolioID, 
+          SUM(AssetReturn * AssetWeight) AS PortfolioReturn
+   FROM PortfolioAssets
+   JOIN AssetReturns ON PortfolioAssets.AssetID = AssetReturns.AssetID
+   GROUP BY PortfolioID;
+   ```
+
+#### c. **Alpha**
+   - **Alpha** represents the excess return of a portfolio over the expected return based on its beta and the market return. SQL can be used to calculate this by comparing actual returns with the expected returns.
+
+   Example:
+   ```sql
+   SELECT PortfolioID, 
+          (AVG(PortfolioReturn) - (RiskFreeRate + Beta * (AVG(MarketReturn) - RiskFreeRate))) AS Alpha
+   FROM PortfolioReturns
+   JOIN MarketReturns ON PortfolioReturns.Date = MarketReturns.Date
+   GROUP BY PortfolioID;
+   ```
+
+---
+
+### 3. **Scenario Analysis and Stress Testing**
+
+In financial applications, **scenario analysis** and **stress testing** are important techniques to evaluate how a portfolio or an asset behaves under various hypothetical market conditions. SQL helps in simulating different scenarios by adjusting the data and observing the potential impact on portfolio performance.
+
+#### a. **Scenario Analysis**
+   - This involves analyzing how different economic or market conditions (like interest rate changes or stock price fluctuations) affect the performance of a portfolio.
+
+   Example: Calculate portfolio return under different interest rate changes.
+   ```sql
+   SELECT PortfolioID, 
+          SUM(AssetReturn * AssetWeight * (1 + InterestRateChange)) AS ScenarioReturn
+   FROM PortfolioAssets
+   JOIN AssetReturns ON PortfolioAssets.AssetID = AssetReturns.AssetID
+   GROUP BY PortfolioID;
+   ```
+
+#### b. **Stress Testing**
+   - Stress testing evaluates how extreme market conditions (such as a financial crisis) could impact a portfolio. SQL can be used to apply extreme shocks to market data and assess the resulting portfolio performance.
+
+   Example: Simulate portfolio return under a 10% market downturn.
+   ```sql
+   SELECT PortfolioID, 
+          SUM(AssetReturn * AssetWeight * 0.9) AS StressTestReturn
+   FROM PortfolioAssets
+   JOIN AssetReturns ON PortfolioAssets.AssetID = AssetReturns.AssetID
+   GROUP BY PortfolioID;
+   ```
+
+---
+
+### 4. **Correlation and Diversification Analysis**
+
+SQL can be used to calculate the **correlation** between different assets in a portfolio. This helps in assessing how assets move relative to each other, which is essential for understanding diversification and reducing portfolio risk.
+
+#### a. **Correlation**
+   - The **correlation** coefficient indicates the relationship between two assets’ returns. A correlation close to 1 means they move in the same direction, while a correlation near -1 means they move in opposite directions.
+   
+   Example:
+   ```sql
+   SELECT Asset1ID, Asset2ID, 
+          (SUM(Asset1Return * Asset2Return) / (SQRT(SUM(Asset1Return * Asset1Return)) * SQRT(SUM(Asset2Return * Asset2Return)))) AS Correlation
+   FROM AssetReturns AS Asset1
+   JOIN AssetReturns AS Asset2 ON Asset1.Date = Asset2.Date
+   GROUP BY Asset1ID, Asset2ID;
+   ```
+
+---
+
+### 5. **Real-Time Monitoring of Portfolio Risk**
+
+In a real-time environment, SQL can be used to track portfolio risk and performance metrics continuously. SQL queries can be scheduled to run at regular intervals, providing up-to-date information for portfolio managers and analysts.
+
+#### a. **Real-Time Portfolio Monitoring**
+   - Continuously monitor portfolio risk and return by executing SQL queries at regular intervals to calculate metrics like volatility, VaR, and portfolio return.
+
+   Example (real-time portfolio performance):
+   ```sql
+   SELECT PortfolioID, 
+          AVG(DailyReturn) AS AvgDailyReturn, 
+          STDDEV(DailyReturn) AS Volatility
+   FROM PortfolioReturns
+   WHERE Date >= GETDATE() - 30
+   GROUP BY PortfolioID;
+   ```
+
+---
+
+### Answer Summary
+
+- **Risk Metrics Calculation**: Use SQL to calculate metrics like **VaR**, **Beta**, **Standard Deviation**, and **Sharpe Ratio** to assess portfolio risk.
+- **Portfolio Performance**: Use SQL to evaluate portfolio performance by calculating **Portfolio Return**, **Alpha**, and **Sharpe Ratio**.
+- **Scenario and Stress Testing**: Use SQL for scenario analysis and stress testing to evaluate portfolio behavior under different conditions.
+- **Diversification and Correlation Analysis**: SQL helps calculate correlations between assets to evaluate portfolio diversification.
+- **Real-Time Monitoring**: SQL can be used for continuous monitoring of portfolio risk and return.
+
+By leveraging SQL in these ways, financial analysts can effectively manage risks, evaluate portfolio performance, and make informed investment decisions.
 <br>
 
 ---
@@ -6391,24 +7727,602 @@ Good documentation improves understanding, reduces errors, and makes collaborati
 ## 🧩 Troubleshooting and Debugging
 
 ### 96. What steps do you take to troubleshoot a failed SQL query?  
-<br>
+### What steps do you take to troubleshoot a failed SQL query?
 
-### 97. How can you recover data from a corrupt SQL database?  
-<br>
-
-### 98. What methods do you employ to ensure data integrity?  
-<br>
-
-### 99. How do you decipher and resolve deadlocks in SQL?  
-<br>
-
-### 100. Explain how to use SQL for predictive analysis and machine learning purposes.  
-<br>
+Troubleshooting a failed SQL query involves systematically identifying and resolving the issue. SQL queries can fail for a variety of reasons, including syntax errors, data issues, or database configurations. Here’s a structured approach to troubleshooting SQL query failures:
 
 ---
 
-Let me know if you’d like this exported as a markdown file or converted into a presentation format!  
+### 1. **Check the Error Message**
+   - The error message returned by the SQL engine can provide critical clues about what went wrong. Common errors include:
+     - **Syntax errors**: These are often the result of misplaced keywords, missing commas, or incorrect SQL statements.
+     - **Constraint violations**: Such as violating primary key or foreign key constraints.
+     - **Data type mismatches**: Like trying to insert a string into a numeric column.
+   - Read the error message carefully to identify the problem’s source.
 
-**Summary:**  
-Angular is a TypeScript-based framework with features like data binding, dependency injection, components, directives, and reactive programming for scalable SPAs.
+---
+
+### 2. **Verify SQL Syntax**
+   - **Check for common syntax mistakes**: SQL queries often fail due to simple mistakes like:
+     - Missing commas, parentheses, or semicolons.
+     - Incorrectly ordered keywords (e.g., `FROM` before `SELECT`).
+     - Mismatched quotes for strings (single vs. double quotes).
+   - **Use SQL formatting tools**: Online SQL formatter tools can help you ensure that the query follows proper formatting rules and is easier to read.
+
+---
+
+### 3. **Ensure Correct Table and Column Names**
+   - **Check the spelling of table and column names**: Make sure that the table and column names match exactly as they appear in the database schema, including correct capitalization, as some databases are case-sensitive.
+   - **Verify the existence of the tables/columns**: Confirm that the tables and columns being referenced exist in the database. You can run simple `SELECT` queries or use `DESCRIBE` (for MySQL) or `sp_help` (for SQL Server) to verify the schema.
+
+---
+
+### 4. **Review Data Types and Constraints**
+   - **Check for data type mismatches**: Make sure the data types in the query match those in the table schema. For example, inserting a string into a numeric column or trying to compare dates as strings can result in errors.
+   - **Verify constraints**: Ensure that the query adheres to any constraints such as **NOT NULL**, **PRIMARY KEY**, **FOREIGN KEY**, and **CHECK** constraints. A violation of any of these constraints will cause the query to fail.
+
+---
+
+### 5. **Check for Missing or Invalid Joins**
+   - **Verify the join conditions**: Incorrect or missing join conditions can result in errors or unexpected results. Ensure that each `JOIN` clause has a correct condition (e.g., `ON table1.id = table2.id`).
+   - **Review the join types**: Ensure that you're using the correct type of join (INNER JOIN, LEFT JOIN, RIGHT JOIN, etc.) based on your needs. For example, using an INNER JOIN when you expect NULL values might lead to missing records.
+
+---
+
+### 6. **Validate Subqueries**
+   - **Check subqueries for correctness**: If your query includes subqueries, ensure that:
+     - Subqueries return a single value (for comparisons) or a valid result set (for `IN`, `EXISTS`, etc.).
+     - The inner query is correctly written and returns the expected results.
+   - **Test subqueries independently**: Run the subqueries by themselves to ensure they produce the expected output before integrating them into the main query.
+
+---
+
+### 7. **Check Database Configuration and Permissions**
+   - **Permissions**: Ensure that the user executing the query has the appropriate permissions to access the table(s) and perform the requested operation (SELECT, INSERT, UPDATE, DELETE).
+   - **Database settings**: Verify that the database configuration, such as connection settings, is correct and that the database is available.
+
+---
+
+### 8. **Examine Query Performance**
+   - **Optimize queries for performance**: Long-running queries may fail due to timeouts or excessive resource usage. Ensure that:
+     - The query is optimized by adding proper indexes, eliminating unnecessary joins, and using efficient `WHERE` clauses.
+     - Avoid selecting all columns (`SELECT *`), especially when working with large tables.
+     - Use appropriate `LIMIT` (or `TOP`) for large result sets to test queries more efficiently.
+   - **Check the execution plan**: Analyze the query execution plan to identify performance bottlenecks, such as full table scans or missing indexes.
+
+---
+
+### 9. **Test with Sample Data**
+   - **Break the query into parts**: If the query is complex, break it down into smaller parts and test each part independently. This can help isolate the section of the query causing the problem.
+   - **Use sample data**: If the issue seems to be related to specific data, test the query with sample data or a smaller dataset to confirm whether the problem is data-specific.
+
+---
+
+### 10. **Check for Database Locks**
+   - **Database locks**: Sometimes, queries fail because of locking issues, especially if another process is holding locks on the data being queried.
+   - **View current locks**: Use system views or commands to identify locks or blocked queries and resolve them. For example, `sp_who2` in SQL Server or `SHOW ENGINE INNODB STATUS` in MySQL.
+   
+---
+
+### Answer Summary
+
+- **Check the error message**: Identify the cause of failure through the error returned by SQL.
+- **Verify SQL syntax**: Ensure correct syntax, parentheses, and keywords.
+- **Check table and column names**: Ensure correct spelling and existence of tables and columns.
+- **Review data types and constraints**: Match data types and validate constraints.
+- **Validate joins and subqueries**: Ensure proper join conditions and subquery behavior.
+- **Database configuration**: Ensure proper permissions and database settings.
+- **Optimize performance**: Analyze query execution plans and optimize for performance.
+- **Test with sample data**: Break down complex queries and test individual parts.
+- **Check for database locks**: Resolve locking or blocking issues. 
+
+Following these steps systematically can help identify and resolve issues in failed SQL queries.
 <br>
+
+### 97. How can you recover data from a corrupt SQL database?  
+### How can you recover data from a corrupt SQL database?
+
+Recovering data from a corrupt SQL database can be a challenging task, but it is possible with the right methods and tools. A corrupt SQL database might result from hardware failure, software bugs, incorrect shutdowns, or even corruption in the database files themselves. Here’s a step-by-step guide on how to recover data from a corrupt SQL database.
+
+---
+
+### 1. **Check Database Integrity with DBCC Commands**
+   - SQL Server provides built-in commands like `DBCC CHECKDB` to check the integrity of the database and detect corruption.
+   - **Steps**:
+     - Run `DBCC CHECKDB` to identify any inconsistencies or corruption in the database:
+       ```sql
+       DBCC CHECKDB ('YourDatabaseName');
+       ```
+     - This command will check the database for common problems like allocation errors, consistency errors, and data corruption. It will also provide recommendations on how to fix the corruption.
+   
+   - **Result**:
+     - If corruption is detected, `DBCC CHECKDB` will give you options to repair it (more on this in the next steps).
+     - The command might recommend running a repair with options like `REPAIR_ALLOW_DATA_LOSS` if corruption is severe.
+
+---
+
+### 2. **Restore from a Backup**
+   - If you have a recent backup of your database, the most reliable recovery method is to restore from that backup.
+   - **Steps**:
+     - Restore the backup using the `RESTORE DATABASE` command:
+       ```sql
+       RESTORE DATABASE YourDatabaseName FROM DISK = 'path_to_backup_file';
+       ```
+   - **Result**:
+     - Restoring from a backup brings the database back to a consistent state without corruption. However, you may lose data after the last backup if the corruption occurred after the last successful backup.
+
+---
+
+### 3. **Use the Emergency Mode (SQL Server)**
+   - SQL Server provides an **Emergency Mode** to bring the database online when corruption prevents normal operations.
+   - **Steps**:
+     - Set the database to **EMERGENCY** mode:
+       ```sql
+       ALTER DATABASE YourDatabaseName SET EMERGENCY;
+       ```
+     - After setting it to emergency mode, set it to single-user mode and attempt to perform a repair:
+       ```sql
+       ALTER DATABASE YourDatabaseName SET SINGLE_USER;
+       DBCC CHECKDB ('YourDatabaseName', REPAIR_ALLOW_DATA_LOSS);
+       ```
+   - **Result**:
+     - Emergency mode enables the database to become accessible in a read-only state, allowing you to repair it and retrieve data if possible. However, this might result in some data loss, depending on the corruption level.
+
+---
+
+### 4. **Export Data Using BCP or SQL Server Management Studio (SSMS)**
+   - If the database is partially corrupted but still accessible, you can try to export the data to another database using the **BCP (Bulk Copy Program)** utility or **SQL Server Management Studio (SSMS)**.
+   - **Steps**:
+     - Use **BCP** to export data:
+       ```bash
+       bcp YourDatabase.dbo.YourTable out datafile.txt -S YourServerName -U YourUsername -P YourPassword -c
+       ```
+     - Alternatively, use SSMS to generate scripts to extract the data from tables.
+   - **Result**:
+     - This method allows you to recover data from accessible tables even if other parts of the database are corrupted.
+
+---
+
+### 5. **Detach and Attach the Database (SQL Server)**
+   - In some cases, detaching and reattaching the database can help recover data if SQL Server cannot access it normally.
+   - **Steps**:
+     - Detach the database:
+       ```sql
+       sp_detach_db 'YourDatabaseName';
+       ```
+     - After detaching, move the database files to another server or machine and attach them:
+       ```sql
+       sp_attach_db 'YourDatabaseName', 'path_to_mdf_file', 'path_to_ldf_file';
+       ```
+   - **Result**:
+     - Detaching and reattaching might bypass some corruption and make the database accessible for further repairs or data recovery.
+
+---
+
+### 6. **Use Third-Party Database Recovery Tools**
+   - If the above methods do not work or the corruption is severe, consider using third-party recovery tools designed for SQL Server, MySQL, or other database management systems. These tools can help recover corrupted data files or repair severely corrupted databases.
+   - Some popular tools include:
+     - **Stellar Repair for MS SQL**
+     - **Kernel for SQL Database Recovery**
+     - **SQL Server Repair Tool**
+   - **Result**:
+     - Third-party tools can offer deeper recovery mechanisms, such as repairing damaged database pages, tables, and indexes.
+
+---
+
+### 7. **Restore Individual Tables from Transaction Log (SQL Server)**
+   - If your database is heavily corrupted but transaction logs are intact, you might be able to recover individual tables or records using the **transaction log**.
+   - **Steps**:
+     - Use **fn_dblog** or a third-party tool to read the transaction log and extract individual data changes.
+   - **Result**:
+     - This allows recovery of data that may have been inserted or modified after the last backup, though it’s a more complex and manual process.
+
+---
+
+### 8. **Consider Rebuilding the Database**
+   - In the worst-case scenario, if corruption cannot be repaired, consider **rebuilding** the database:
+     - Create a new empty database.
+     - Use the `INSERT INTO` statement or BCP to move clean data into the new database from the accessible parts of the old one.
+   - **Result**:
+     - This method involves manually reconstructing the database and migrating data to a new, non-corrupt instance.
+
+---
+
+### Answer Summary
+
+- **Check integrity with DBCC**: Use `DBCC CHECKDB` to identify and fix corruption issues.
+- **Restore from backup**: If available, restore the database from a recent backup.
+- **Emergency mode**: Bring the database online with limited access using emergency mode.
+- **Export data**: Use BCP or SSMS to export data from the corrupt database to another database.
+- **Detach and Attach**: Detach and reattach the database to bypass corruption.
+- **Use third-party recovery tools**: Use specialized tools to recover data or repair severely corrupted databases.
+- **Transaction log recovery**: Extract data from transaction logs if corruption is detected.
+- **Rebuild the database**: In extreme cases, manually rebuild the database by migrating clean data.
+
+By following these steps, you can recover data from a corrupt SQL database and restore it to a working state.
+<br>
+
+### 98. What methods do you employ to ensure data integrity?  
+### What methods do you employ to ensure data integrity?
+
+Data integrity is crucial in database management as it ensures that data is accurate, consistent, and reliable throughout its lifecycle. Various methods and best practices can be employed to maintain data integrity, ranging from designing a robust database schema to using transactional controls. Below are some of the key methods to ensure data integrity.
+
+---
+
+### 1. **Use of Primary Keys and Unique Constraints**
+   - **Primary Key**: A primary key uniquely identifies each record in a database table. By ensuring that each record is unique, it guarantees that no duplicate data can be inserted.
+   - **Unique Constraints**: A unique constraint ensures that no two rows in a table can have the same value in a specified column or group of columns.
+   - **Example**:
+     ```sql
+     CREATE TABLE Employees (
+         EmployeeID INT PRIMARY KEY,
+         Email VARCHAR(100) UNIQUE
+     );
+     ```
+   - **Result**: This method prevents duplicate records and ensures that each row has a unique identity, which is foundational for data integrity.
+
+---
+
+### 2. **Use of Foreign Keys for Referential Integrity**
+   - **Foreign Keys**: A foreign key is a column or group of columns in one table that refers to the primary key in another table. This maintains referential integrity by ensuring that relationships between tables are valid.
+   - **Example**:
+     ```sql
+     CREATE TABLE Orders (
+         OrderID INT PRIMARY KEY,
+         CustomerID INT,
+         FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID)
+     );
+     ```
+   - **Result**: This ensures that there is always a valid reference in the foreign table, preventing orphaned records and maintaining the integrity of relationships.
+
+---
+
+### 3. **Enforcing Data Types and Validation Rules**
+   - **Data Types**: Ensuring that data is stored in the appropriate format by defining proper data types for each column helps prevent the insertion of invalid data.
+   - **Check Constraints**: SQL allows you to define check constraints that enforce specific conditions on column values.
+   - **Example**:
+     ```sql
+     CREATE TABLE Employees (
+         EmployeeID INT PRIMARY KEY,
+         Salary DECIMAL(10, 2) CHECK (Salary >= 0)
+     );
+     ```
+   - **Result**: This ensures that data adheres to specified formats, ranges, and conditions, preventing inconsistent or erroneous data from being inserted.
+
+---
+
+### 4. **Normalization and Database Design**
+   - **Normalization**: This is the process of organizing the data in a database to reduce redundancy and dependency. By following normalization rules (1NF, 2NF, 3NF, etc.), you can ensure that the data is structured efficiently.
+   - **Example**: In a normalized database, customer data is stored in one table, and order data is stored in another, with a foreign key linking them. This reduces data redundancy and ensures consistency.
+   - **Result**: Proper database design ensures that data is logically stored, reducing anomalies and ensuring consistency.
+
+---
+
+### 5. **Transactional Integrity (ACID Properties)**
+   - **ACID Properties**: Transactions in databases adhere to the ACID properties — **Atomicity**, **Consistency**, **Isolation**, and **Durability** — which ensure that database operations are completed correctly, or not at all, preventing data corruption.
+     - **Atomicity** ensures that all steps in a transaction are completed successfully, or none at all.
+     - **Consistency** ensures that a transaction takes the database from one valid state to another.
+     - **Isolation** ensures that concurrent transactions do not interfere with each other.
+     - **Durability** ensures that once a transaction is committed, it cannot be undone, even in case of system failures.
+   - **Example**:
+     ```sql
+     BEGIN TRANSACTION;
+     UPDATE Account SET Balance = Balance - 100 WHERE AccountID = 1;
+     UPDATE Account SET Balance = Balance + 100 WHERE AccountID = 2;
+     COMMIT;
+     ```
+   - **Result**: The ACID properties guarantee that the database remains consistent even in the event of power failures or other interruptions.
+
+---
+
+### 6. **Use of Triggers for Data Validation**
+   - **Triggers**: Triggers are database objects that automatically execute or fire when certain events (such as `INSERT`, `UPDATE`, or `DELETE`) occur in a table. They can be used to enforce data integrity by validating or modifying data before or after the event occurs.
+   - **Example**:
+     ```sql
+     CREATE TRIGGER ValidateSalary
+     BEFORE INSERT ON Employees
+     FOR EACH ROW
+     BEGIN
+         IF NEW.Salary < 0 THEN
+             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Salary cannot be negative';
+         END IF;
+     END;
+     ```
+   - **Result**: Triggers can be used to enforce complex validation rules and prevent invalid data from being inserted or updated in the database.
+
+---
+
+### 7. **Audit and Logging Mechanisms**
+   - **Auditing**: Implementing auditing mechanisms can help track changes made to the data, which is especially useful in scenarios where data integrity issues need to be traced.
+   - **Example**:
+     - Use SQL Server’s built-in auditing feature or third-party tools to log insert, update, and delete operations.
+   - **Result**: Auditing helps detect unauthorized changes and ensures that data modifications are tracked, promoting data integrity and accountability.
+
+---
+
+### 8. **Regular Backups and Data Recovery Plans**
+   - **Backups**: Regular backups of the database help ensure that in case of data corruption or loss, the data can be restored to its previous state.
+   - **Example**:
+     ```sql
+     BACKUP DATABASE YourDatabase TO DISK = 'C:\Backups\YourDatabase.bak';
+     ```
+   - **Result**: Regular backups allow for recovery of the database to a consistent and known state in the event of a failure, ensuring the integrity of historical data.
+
+---
+
+### 9. **Concurrency Control**
+   - **Concurrency Control**: To ensure data integrity in multi-user environments, databases employ various mechanisms like **locking** and **transactions** to control access to data.
+   - **Example**: Use **pessimistic** locking (`SELECT FOR UPDATE`) to ensure that data is locked for a specific user during updates, preventing conflicts.
+   - **Result**: Concurrency control mechanisms ensure that multiple users can access and modify the database without conflicting with each other, thus maintaining data consistency.
+
+---
+
+### 10. **Error Handling and Exception Management**
+   - **Error Handling**: Proper error handling ensures that any issues are caught and resolved, preventing the insertion of invalid data or inconsistencies in the database.
+   - **Example**:
+     ```sql
+     BEGIN TRY
+         -- SQL code that might fail
+     END TRY
+     BEGIN CATCH
+         -- Handle the error and ensure data integrity
+     END CATCH
+     ```
+   - **Result**: Proper exception handling ensures that any errors encountered during data modification operations are caught and managed, ensuring that invalid data is not committed to the database.
+
+---
+
+### Answer Summary
+
+- **Primary Keys & Unique Constraints**: Ensures uniqueness of data entries.
+- **Foreign Keys**: Maintains referential integrity between related tables.
+- **Data Types & Validation Rules**: Enforces correct data formats and conditions.
+- **Normalization**: Organizes data to reduce redundancy and ensure consistency.
+- **ACID Transactions**: Guarantees correct and consistent data operations.
+- **Triggers**: Automates data validation and integrity checks.
+- **Auditing & Logging**: Tracks changes to detect issues and maintain data integrity.
+- **Backups**: Ensures data can be restored to a consistent state after failure.
+- **Concurrency Control**: Manages simultaneous data access and modifications.
+- **Error Handling**: Catches and resolves issues to maintain data integrity.
+
+By employing these methods, you can ensure that your database remains reliable, accurate, and consistent, even in complex and high-traffic environments.
+<br>
+
+### 99. How do you decipher and resolve deadlocks in SQL?  
+Deciphering and resolving **deadlocks** in SQL is crucial for maintaining the health and performance of a database system, especially in high-concurrency environments.
+
+---
+
+### 🧠 **What is a Deadlock?**
+
+A **deadlock** occurs when two or more transactions hold locks on resources and each transaction is waiting for the other to release their lock, causing all of them to wait indefinitely.
+
+> Think of it like:  
+> - Transaction A locks Resource 1, then tries to lock Resource 2  
+> - Transaction B locks Resource 2, then tries to lock Resource 1  
+> - Both are waiting for each other — boom, deadlock!
+
+---
+
+### 🕵️‍♂️ **How to Detect Deadlocks**
+
+#### 1. **Using SQL Server Profiler / Extended Events** (SQL Server)
+- **Profiler** or **Extended Events** can capture deadlock graphs.
+- Look for event `Deadlock graph` or `xml_deadlock_report`.
+- Analyze:
+  - `Victim` — the transaction that was rolled back
+  - `Owner` — the one holding the lock
+  - `Waiter` — the one waiting
+  - Resources involved
+
+#### 2. **System Views** (SQL Server example)
+```sql
+SELECT * 
+FROM sys.dm_tran_locks;
+```
+
+#### 3. **ERRORLOG / Application Logs**
+- SQL Server logs deadlocks by default.
+- Also caught by application if you enable error logging.
+
+#### 4. **Deadlock Trace Flag**
+Enable trace flag 1222 or 1204 to log deadlock details in the error log:
+```sql
+DBCC TRACEON (1222, -1); -- Logs XML deadlock graphs
+```
+
+---
+
+### 🛠️ **How to Resolve Deadlocks**
+
+#### ✅ 1. **Access Resources in the Same Order**
+Ensure all transactions access tables in the same sequence. This prevents circular waits.
+
+#### ✅ 2. **Keep Transactions Short**
+- Avoid long-running transactions.
+- Commit as early as possible.
+
+#### ✅ 3. **Use `WITH (NOLOCK)` Carefully**
+- It avoids shared locks but can cause dirty reads.
+- Only use for non-critical data or reports.
+
+#### ✅ 4. **Use Retry Logic in Application Code**
+Wrap operations in retry logic if a deadlock occurs (especially important in high-concurrency apps).
+
+#### ✅ 5. **Set Deadlock Priority**
+Let SQL Server know which process is less important (might get killed first):
+```sql
+SET DEADLOCK_PRIORITY LOW; -- Options: LOW | NORMAL | HIGH | numeric (-10 to 10)
+```
+
+#### ✅ 6. **Optimize Indexes & Queries**
+- Missing indexes can increase lock durations.
+- Avoid full table scans.
+- Reduce rows scanned by filtering early.
+
+#### ✅ 7. **Use Row-level Locks Instead of Page/Table Locks**
+- This limits the lock scope, reducing contention.
+- For example: `SELECT ... FROM Table WITH (ROWLOCK)`
+
+#### ✅ 8. **Partition Data Where Possible**
+Helps to reduce contention by spreading load across partitions.
+
+---
+
+### 🧪 Example of a Deadlock Situation
+
+```sql
+-- Session 1
+BEGIN TRAN;
+UPDATE Accounts SET Balance = Balance - 100 WHERE AccountID = 1;
+
+-- Session 2
+BEGIN TRAN;
+UPDATE Accounts SET Balance = Balance + 100 WHERE AccountID = 2;
+
+-- Now Session 1 tries to access AccountID 2
+UPDATE Accounts SET Balance = Balance + 100 WHERE AccountID = 2;
+
+-- And Session 2 tries to access AccountID 1
+UPDATE Accounts SET Balance = Balance - 100 WHERE AccountID = 1;
+-- 💥 Deadlock occurs!
+```
+
+---
+
+### 🧩 Final Thoughts
+
+- Deadlocks are inevitable in high-concurrency environments.
+- Instead of completely avoiding them, **detect**, **analyze**, and **design defensively**.
+- Tools like **Extended Events**, **Deadlock Graphs**, and **retry logic** in applications are your best friends.
+
+Let me know if you want a **live example**, a **deadlock graph analysis**, or **best practices specific to PostgreSQL / MySQL / Oracle**!
+<br>
+
+### 100. Explain how to use SQL for predictive analysis and machine learning purposes.  
+### Answer Summary  
+SQL can be effectively used for predictive analysis and machine learning (ML) tasks, especially in the **data preparation**, **feature engineering**, and **exploratory data analysis (EDA)** stages. While core ML model training usually happens in specialized environments like Python (scikit-learn, TensorFlow) or R, SQL is crucial for **feeding clean, aggregated, and structured data into those models**. Some modern database systems (like BigQuery ML, SQL Server ML Services) also support **direct ML model creation and prediction using SQL syntax**.
+
+---
+
+### ✅ How SQL Supports Predictive Analysis & ML
+
+#### 1. **Data Collection & Preparation**
+This is the first and one of the most critical steps in any ML pipeline. SQL is perfect for:
+- **Joining** tables
+- **Filtering** relevant records
+- **Handling missing values**
+- **Aggregating data** over time
+- **Normalizing** or **scaling** values
+
+```sql
+SELECT
+  CustomerID,
+  AVG(PurchaseAmount) AS AvgPurchase,
+  MAX(PurchaseDate) AS LastPurchaseDate
+FROM Transactions
+GROUP BY CustomerID;
+```
+
+#### 2. **Feature Engineering**
+SQL helps in creating **derived columns** (features), which are essential inputs to any ML model:
+- Binning (e.g., age groups)
+- Ratios and rates
+- Categorical encoding
+- Time-based features
+
+```sql
+SELECT 
+  CASE 
+    WHEN Age BETWEEN 18 AND 25 THEN 'Youth'
+    WHEN Age BETWEEN 26 AND 40 THEN 'Adult'
+    ELSE 'Senior'
+  END AS AgeGroup
+FROM Customers;
+```
+
+#### 3. **Exploratory Data Analysis (EDA)**
+You can use SQL to understand patterns and distributions:
+- Count distributions
+- Grouped averages
+- Outlier detection
+
+```sql
+SELECT Gender, COUNT(*) AS Count, AVG(Salary) AS AvgSalary
+FROM Employees
+GROUP BY Gender;
+```
+
+#### 4. **Data Export for Modeling**
+After cleaning and transforming the data, SQL is used to export datasets into formats like CSV, which are then fed into ML tools.
+
+```sql
+SELECT * INTO OUTFILE '/path/to/export.csv'
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+FROM PreparedData;
+```
+
+---
+
+### 🚀 Advanced: Using SQL for ML Model Training & Prediction
+
+#### A. **BigQuery ML (Google BigQuery)**
+Allows you to build models using pure SQL:
+
+```sql
+CREATE OR REPLACE MODEL my_dataset.logistic_model
+OPTIONS(model_type='logistic_reg') AS
+SELECT age, income, purchased
+FROM customers;
+```
+
+To predict:
+
+```sql
+SELECT *
+FROM ML.PREDICT(MODEL `my_dataset.logistic_model`,
+                (SELECT age, income FROM new_customers));
+```
+
+#### B. **SQL Server ML Services**
+Supports R and Python inside SQL Server:
+
+```sql
+EXEC sp_execute_external_script  
+  @language = N'Python',
+  @script = N'
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+# Perform model training here',
+  @input_data_1 = N'SELECT Age, Income, Purchased FROM Customers';
+```
+
+#### C. **PostgreSQL with Extensions**
+Extensions like `MADlib` let you train models:
+
+```sql
+SELECT madlib.logregr_train(
+  'customer_data', 'model_output', 'purchased', 'ARRAY[1, age, income]'
+);
+```
+
+---
+
+### 🧠 Typical Use Cases in Predictive Analysis
+
+- **Customer churn prediction**
+- **Sales forecasting**
+- **Fraud detection**
+- **Recommendation systems**
+- **Credit scoring**
+
+---
+
+### 💡 Pro Tips
+
+- Keep SQL tasks focused on **data transformation and preparation** — let Python/R handle the heavy ML lifting.
+- Document your SQL queries used in the ML pipeline for reproducibility.
+- Use **CTEs** (Common Table Expressions) to organize complex feature engineering logic.
+- Use **views** or **materialized views** for reusable transformed datasets.
+
+---
